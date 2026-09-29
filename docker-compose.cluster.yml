@@ -1,0 +1,96 @@
+# Four-broker Kafka cluster in KRaft combined mode (each node is a broker and a controller).
+#
+# Do not run this at the same time as docker-compose.yml. Broker 1 publishes host port 29092,
+# which the single-node stack also uses.
+#
+#   docker compose -f docker-compose.cluster.yml up
+#
+# Host clients (bootstrap with any of these, preferably more than one):
+#   host.docker.internal:29092,host.docker.internal:39092,host.docker.internal:49092,host.docker.internal:59092
+# Kafka UI: http://localhost:8083
+#
+# Every node must use the same CLUSTER_ID. The image formats storage with that id on first start.
+# A 4-voter controller quorum needs 3 voters up. Production clusters usually use 3 or 5 controllers.
+
+x-kafka-common: &kafka-common
+  image: apache/kafka:latest
+  restart: unless-stopped
+  environment: &kafka-env
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093,4@kafka-4:9093
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+    # Inter-broker traffic stays on the Docker network. Host clients use PLAINTEXT_EXTERNAL.
+    KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092,PLAINTEXT_EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    CLUSTER_ID: KafkaLab4BrokerClstr1
+    # Internal topics must be replicated. RF 3 keeps a copy on three brokers, so one broker can be down.
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 2
+    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    KAFKA_MIN_INSYNC_REPLICAS: 2
+    KAFKA_NUM_PARTITIONS: 4
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+
+services:
+  kafka-1:
+    <<: *kafka-common
+    hostname: kafka-1
+    container_name: kafka-1
+    ports:
+      - "29092:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:19092,PLAINTEXT_EXTERNAL://host.docker.internal:29092
+
+  kafka-2:
+    <<: *kafka-common
+    hostname: kafka-2
+    container_name: kafka-2
+    ports:
+      - "39092:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:19092,PLAINTEXT_EXTERNAL://host.docker.internal:39092
+
+  kafka-3:
+    <<: *kafka-common
+    hostname: kafka-3
+    container_name: kafka-3
+    ports:
+      - "49092:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:19092,PLAINTEXT_EXTERNAL://host.docker.internal:49092
+
+  kafka-4:
+    <<: *kafka-common
+    hostname: kafka-4
+    container_name: kafka-4
+    ports:
+      - "59092:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 4
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-4:19092,PLAINTEXT_EXTERNAL://host.docker.internal:59092
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui-cluster
+    depends_on:
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - kafka-4
+    ports:
+      - "8083:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kafka-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:19092,kafka-2:19092,kafka-3:19092,kafka-4:19092

@@ -1,0 +1,52 @@
+services:
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka-lab
+    ports:
+      - "9095:9092"
+      - "29092:29092"
+    # Everything underneath this is passed to Kafka as an environment variable.
+    environment:
+      # ---- KRaft core ----
+      KAFKA_NODE_ID: 1 # unique id for the kafka server/node
+      KAFKA_PROCESS_ROLES: broker,controller # roles of the kafka node
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093 # quorum voters for the kafka controller
+
+      # ---- Listeners (ALL roles must appear here) ----
+      # listeners tells the Kafka process what physical network interface it should open a listening socket to.
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9095,PLAINTEXT_EXTERNAL://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+
+      # ---- Advertised addresses ----
+      # This is the address clients should use to connect to the Kafka broker.
+      # Addresses could be some combination of ip addresses or dns addresses.
+      # Examples: 192.168.0.1:9095, kafka1.prod.examplecompany.com:9095.
+      # The advertised.listeners parameter becomes confusing because some of these addresses are redundant (ie pointless). At least 1 of them must be specified in the client application in the bootstrap.servers string. Otherwise the client doesn’t know how to connect to any of the Kafka brokers. It must know about at least one broker in advance, however typically several broker addresses would be provided for redundancy.
+      # PLAINTEXT_EXTERNAL is the address returned to clients outside Docker.
+      # host.docker.internal only resolves on this laptop, so other machines need this laptop's LAN IP.
+      # KAFKA_ADVERTISED_HOST comes from .env and must match constants.RemoteBootstrapServer.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9095,PLAINTEXT_EXTERNAL://${KAFKA_ADVERTISED_HOST:-192.168.1.8}:29092
+
+      # ---- Controller configuration ----
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+      # ---- Protocol mapping ----
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+
+      # ---- Storage ----
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+  
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local-kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9095
